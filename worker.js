@@ -19,7 +19,6 @@ export default {
 
       // https://developers.cloudflare.com/workers/runtime-apis/cache/#accessing-cache
       const cachedResponse = await cache.match(request);
-
       if (cachedResponse) {
         return cachedResponse;
       }
@@ -34,13 +33,13 @@ export default {
 
       const html = await response.text();
 
-      const extract = (regex) => {
-        const match = html.match(regex);
+      const extract = (pattern) => {
+        const match = html.match(pattern);
         return match ? match[1].trim() : null;
       };
 
-      const extractNumber = (text, regex) => {
-        const match = text.match(regex);
+      const extractNumber = (text, pattern) => {
+        const match = text.match(pattern);
         return match ? Number(match[1].replace(/\D/g, "")) : null;
       };
 
@@ -54,22 +53,27 @@ export default {
 
       const groupName = extract(/tgme_page_title[^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>/i);
       const groupProfilePhotoLink = extract(/<img class="tgme_page_photo_image" src="([^"]+)"/i);
-      const members = extractNumber(text, /([\d\s,.]+)\s+members/i);
-      const onlineMembers = extractNumber(text, /([\d\s,.]+)\s+online/i);
+      
+      const membersMatch = text.match(/([\d\s,.]+)\s+members?/i);
+      const members = membersMatch ? Number(membersMatch[1].replace(/\D/g, "")) : null;
+
+      const onlineMatch = text.match(/([\d\s,.]+)\s+online/i);
+      const onlineMembers = onlineMatch ? Number(onlineMatch[1].replace(/\D/g, "")) : null;
 
       const fmtNumber = (num) => {
         if (num === null) return null;
-        if (num >= 1e6) return (num / 1e6).toFixed(1) + 'm';
-        if (num >= 1e3) return (num / 1e3).toFixed(1) + 'k';
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'm';
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
         return num.toString();
       };
 
-      const summary = (members, online) => {
-        const parts = [];
-        if (members !== null) parts.push(`${members} members`);
-        if (online !== null) parts.push(`${online} online`);
-        return parts.length ? parts.join(', ') : null;
-      };
+      let pretty = text;
+      pretty = pretty.replace(/(\d[\d\s,.]+)\s+(members?)/i, (_, num, word) => {
+        return `${fmtNumber(Number(num.replace(/\D/g, "")))} ${word}`;
+      });
+      pretty = pretty.replace(/(\d[\d\s,.]+)\s+online/i, (_, num) => {
+        return `${fmtNumber(Number(num.replace(/\D/g, "")))} online`;
+      });
 
       const jsonResponse = Response.json(
         {
@@ -77,8 +81,8 @@ export default {
           group_profile_photo_link: groupProfilePhotoLink,
           members,
           online_members: onlineMembers,
-          members_summary: summary(members, onlineMembers),
-          members_summary_pretty: summary(fmtNumber(members), fmtNumber(onlineMembers))
+          members_summary: text,
+          members_summary_pretty: pretty
         },
         { headers: { "Cache-Control": "public, max-age=300" } },
       );
