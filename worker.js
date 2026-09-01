@@ -18,55 +18,73 @@ export default {
       }
 
       // https://developers.cloudflare.com/workers/runtime-apis/cache/#accessing-cache
-      const cached = await cache.match(request);
+      const cachedResponse = await cache.match(request);
 
-      if (cached) {
-        return cached;
+      if (cachedResponse) {
+        return cachedResponse;
       }
 
-      const tg_url = `https://t.me/${username}`;
-
-      const res = await fetch(tg_url);
-
-      if (!res.ok) {
+      const response = await fetch(`https://t.me/${username}`);
+      if (!response.ok) {
         return Response.json(
-          {
-            error: "Telegram public channel not found",
-            username,
-          },
+          { error: "Telegram public channel not found", username },
           { status: 404 }
         );
       }
 
-      const html = await res.text();
+      const html = await response.text();
 
-      const text_match = html.match(/tgme_page_extra[^>]*>([^<]+)</i);
+      const extract = (regex) => {
+        const match = html.match(regex);
+        return match ? match[1].trim() : null;
+      };
 
-      if (!text_match) {
+      const extractNumber = (text, regex) => {
+        const match = text.match(regex);
+        return match ? Number(match[1].replace(/\D/g, "")) : null;
+      };
+
+      const text = extract(/tgme_page_extra[^>]*>([^<]+)</i);
+      if (!text) {
         return Response.json(
           { error: `Telegram group 't.me/${username}' not found, unavailable, or is private` },
           { status: 404 }
         );
       }
 
-      const text = text_match[1].trim();
+      const groupName = extract(/tgme_page_title[^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>/i);
+      const groupProfilePhotoLink = extract(/<img class="tgme_page_photo_image" src="([^"]+)"/i);
+      const members = extractNumber(text, /([\d\s,.]+)\s+members/i);
+      const onlineMembers = extractNumber(text, /([\d\s,.]+)\s+online/i);
 
-      const members = Number(
-        text.match(/([\d\s,.]+)\s+members/i)?.[1]?.replace(/\D/g, "") || 0
-      );
+      const fmtNumber = (num) => {
+        if (num === null) return null;
+        if (num >= 1e6) return (num / 1e6).toFixed(1) + 'm';
+        if (num >= 1e3) return (num / 1e3).toFixed(1) + 'k';
+        return num.toString();
+      };
 
-      const online_members = Number(
-        text.match(/([\d\s,.]+)\s+online/i)?.[1]?.replace(/\D/g, "") || 0
-      );
+      const summary = (members, online) => {
+        const parts = [];
+        if (members !== null) parts.push(`${members} members`);
+        if (online !== null) parts.push(`${online} online`);
+        return parts.length ? parts.join(', ') : null;
+      };
 
-      const response = Response.json(
-        { members, online_members },
+      const jsonResponse = Response.json(
+        {
+          group_name: groupName,
+          group_profile_photo_link: groupProfilePhotoLink,
+          members,
+          online_members: onlineMembers,
+          members_summary: summary(members, onlineMembers),
+          members_summary_pretty: summary(fmtNumber(members), fmtNumber(onlineMembers))
+        },
         { headers: { "Cache-Control": "public, max-age=300" } },
       );
 
-      ctx.waitUntil(cache.put(request, response.clone()));
-
-      return response;
+      ctx.waitUntil(cache.put(request, jsonResponse.clone()));
+      return jsonResponse;
     } catch {
       return Response.json(
         { error: "Internal server error" },
