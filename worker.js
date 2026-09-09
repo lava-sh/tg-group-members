@@ -38,11 +38,6 @@ export default {
         return match ? match[1].trim() : null;
       };
 
-      const extractNumber = (text, pattern) => {
-        const match = text.match(pattern);
-        return match ? Number(match[1].replace(/\D/g, "")) : null;
-      };
-
       const text = extract(/tgme_page_extra[^>]*>([^<]+)</i);
       if (!text) {
         return Response.json(
@@ -54,7 +49,7 @@ export default {
       const groupName = extract(/tgme_page_title[^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>/i);
       const groupProfilePhotoLink = extract(/<img class="tgme_page_photo_image" src="([^"]+)"/i);
       
-      const membersMatch = text.match(/([\d\s,.]+)\s+members?/i);
+      const membersMatch = text.match(/([\d\s,.]+)\s+(member?s?)/i);
       const members = membersMatch ? Number(membersMatch[1].replace(/\D/g, "")) : null;
 
       const onlineMatch = text.match(/([\d\s,.]+)\s+online/i);
@@ -68,9 +63,7 @@ export default {
       };
 
       let pretty = text;
-      pretty = pretty.replace(/(\d[\d\s,.]+)\s+(members?)/i, (_, num, word) => {
-        return `${fmtNumber(Number(num.replace(/\D/g, "")))} ${word}`;
-      });
+      pretty = pretty.replace(membersMatch[0], `${fmtNumber(members)} ${membersMatch[2]}`);
       pretty = pretty.replace(/(\d[\d\s,.]+)\s+online/i, (_, num) => {
         return `${fmtNumber(Number(num.replace(/\D/g, "")))} online`;
       });
